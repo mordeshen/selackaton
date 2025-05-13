@@ -13,7 +13,9 @@ const PersonalChat = () => {
 
   // פונקציה לגלילה אוטומטית לסוף הצ'אט
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   // טעינת הצ'אט

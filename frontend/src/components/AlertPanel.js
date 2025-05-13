@@ -107,16 +107,24 @@ const AlertPanel = ({
     
     switch (action) {
       case 'dismiss':
-        onAlertDismiss?.(selectedAlert);
+        if (onAlertDismiss) {
+          onAlertDismiss(selectedAlert);
+        }
         break;
       case 'view':
-        onAlertAction?.(selectedAlert, 'view');
+        if (onAlertAction) {
+          onAlertAction(selectedAlert, 'view');
+        }
         break;
       case 'delete':
-        onAlertAction?.(selectedAlert, 'delete');
+        if (onAlertAction) {
+          onAlertAction(selectedAlert, 'delete');
+        }
         break;
       case 'contact':
-        onAlertAction?.(selectedAlert, 'contact');
+        if (onAlertAction) {
+          onAlertAction(selectedAlert, 'contact');
+        }
         break;
       default:
         break;
@@ -257,12 +265,16 @@ const AlertPanel = ({
           action={
             <Box>
               <Tooltip title="סמן הכל כנקרא">
-                <IconButton size="small" onClick={() => onAlertAction?.(null, 'markAllRead')}>
+                <IconButton size="small" onClick={() => {
+                  if (onAlertAction) onAlertAction(null, 'markAllRead');
+                }}>
                   <CheckCircleIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
               <Tooltip title="מחק הכל">
-                <IconButton size="small" onClick={() => onAlertAction?.(null, 'deleteAll')}>
+                <IconButton size="small" onClick={() => {
+                  if (onAlertAction) onAlertAction(null, 'deleteAll');
+                }}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Tooltip>

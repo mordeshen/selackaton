@@ -6,13 +6,20 @@ const config = require('../config');
 
 class NotificationService {
   constructor() {
-    // Skip Firebase initialization in development mode
-    if (process.env.NODE_ENV !== 'development') {
-      // אתחול Firebase לצורך שליחת התראות push
-      admin.initializeApp({
-        credential: admin.credential.cert(config.firebase.serviceAccount),
-        databaseURL: config.firebase.databaseURL
-      });
+    // אתחול Firebase רק אם יש מידע חשבון שירות תקף
+    if (!admin.apps.length && config.firebase.serviceAccount && config.firebase.serviceAccount.project_id) {
+      try {
+        admin.initializeApp({
+          credential: admin.credential.cert(config.firebase.serviceAccount),
+          databaseURL: config.firebase.databaseURL
+        });
+        console.log('Firebase Admin SDK initialized successfully');
+      } catch (error) {
+        console.error('Error initializing Firebase admin:', error);
+        console.log('Continuing without Firebase notifications');
+      }
+    } else {
+      console.log('Firebase initialization skipped - running in development mode or missing valid service account');
     }
   }
 
@@ -81,14 +88,18 @@ class NotificationService {
       
       // שליחת התראה ב-WhatsApp
       if (user.phoneNumber) {
-        await WhatsAppService.sendMessage(
-          user.phoneNumber,
-          `*${notification.title}*\n\n${notification.message}`
-        );
+        try {
+          await WhatsAppService.sendMessage(
+            user.phoneNumber,
+            `*${notification.title}*\n\n${notification.message}`
+          );
+        } catch (whatsappError) {
+          console.error('WhatsApp message error:', whatsappError);
+        }
       }
       
       // שליחת התראת Push למכשירים מחוברים
-      if (user.deviceTokens && user.deviceTokens.length > 0) {
+      if (user.deviceTokens && user.deviceTokens.length > 0 && admin.apps.length > 0) {
         const message = {
           notification: {
             title: notification.title,
@@ -102,7 +113,12 @@ class NotificationService {
           tokens: user.deviceTokens
         };
         
-        await admin.messaging().sendMulticast(message);
+        try {
+          await admin.messaging().sendMulticast(message);
+        } catch (firebaseError) {
+          console.error('Firebase messaging error:', firebaseError);
+          // המשך התהליך גם אם שליחת ההתראה נכשלה
+        }
       }
       
       // שמירת ההתראה בהיסטוריית ההתראות של המשתמש
@@ -111,7 +127,7 @@ class NotificationService {
           notifications: {
             title: notification.title,
             message: notification.message,
-            data: notification.data,
+            data: notification.data || {},
             priority: notification.priority || 'normal',
             requiresAction: notification.requiresAction || false,
             read: false,
@@ -148,6 +164,7 @@ class NotificationService {
   async sendGroupNotification(groupId, notification) {
     try {
       // שליחת התראה לכל חברי הקבוצה
+      const Group = require('../models/Group'); // דינמי כדי למנוע בעיות של הפניות מעגליות
       const group = await Group.findById(groupId);
       
       if (!group) {

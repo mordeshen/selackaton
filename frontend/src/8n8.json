@@ -1,0 +1,1461 @@
+{
+  "name": "מרכז טיפולי וירטואלי",
+  "nodes": [
+  {
+    "parameters": {
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "Twilio API",
+      "resource": "message",
+      "operation": "send",
+      "from": "whatsapp:+14155238886",
+      "to": "whatsapp:={{ $json.userPhone }}",
+      "content": "={{ $json.initialMessage }}"
+    },
+    "name": "Twilio - קבלת פניות חדשות",
+    "type": "n8n-nodes-base.twilio",
+    "typeVersion": 1,
+    "position": [
+      240,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "httpMethod": "POST",
+      "options": {},
+      "url": "https://api.openai.com/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "ChatGPT API",
+      "sendBody": true,
+      "bodyParameters": {
+        "parameters": [
+          {
+            "name": "model",
+            "value": "gpt-4"
+          },
+          {
+            "name": "messages",
+            "value": "={{ [\n  {\n    \"role\": \"system\",\n    \"content\": \"אתה מטפל אישי וירטואלי. תפקידך לנהל שיחה נעימה עם המשתמש, להבין את האופי שלו, צרכיו והעדפותיו. בסוף השיחה תצטרך לאפיין את המשתמש על-פי מספר פרמטרים: אינטרוברטי/אקסטרוברטי (1-10), תחומי עניין עיקריים (רשימה מופרדת בפסיקים), אתגרים חברתיים (רשימה מופרדת בפסיקים), סוג קבוצה מועדף (קטנה ואינטימית/בינונית ומגוונת/גדולה ופעילה)\"\n  },\n  {\n    \"role\": \"user\",\n    \"content\": $json.incomingMessage\n  }\n]"
+          },
+          {
+            "name": "temperature",
+            "value": 0.7
+          }
+        ]
+      },
+      "sendHeaders": true,
+      "headerParameters": {
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      }
+    },
+    "name": "ChatGPT - מטפל אישי",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 1,
+    "position": [
+      460,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "conditions": {
+        "string": [
+          {
+            "value1": "={{ $json.session_stage }}",
+            "operation": "isNotEmpty"
+          }
+        ]
+      }
+    },
+    "name": "בדיקת שלב שיחה",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 1,
+    "position": [
+      680,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "functionCode": "// קוד שמחלץ את תשובת המטפל מתגובת ה-API וקובע את השלב הבא בשיחה\nconst response = JSON.parse(items[0].json).choices[0].message.content;\nlet sessionStage = items[0].json.session_stage || 'initial';\nlet userProfile = items[0].json.userProfile || {};\n\n// אם זו שיחה ראשונה, נתחיל את תהליך האפיון\nif (sessionStage === 'initial') {\n  sessionStage = 'profiling';\n} \n// אם אנחנו בשלב האפיון ויש מספיק מידע, נעבור לשלב הבא\nelse if (sessionStage === 'profiling' && response.includes('אפיון')) {\n  sessionStage = 'completed';\n  \n  // חילוץ מאפייני המשתמש מהתשובה\n  if (response.includes('אינטרוברטי/אקסטרוברטי:')) {\n    const introExtroMatch = response.match(/אינטרוברטי\\/אקסטרוברטי:\\s*(\\d+)/i);\n    if (introExtroMatch) {\n      userProfile.introExtroScore = parseInt(introExtroMatch[1]);\n    }\n  }\n  \n  if (response.includes('תחומי עניין:')) {\n    const interestsMatch = response.match(/תחומי עניין:\\s*([^\\n]+)/i);\n    if (interestsMatch) {\n      userProfile.interests = interestsMatch[1].split(',').map(i => i.trim());\n    }\n  }\n  \n  if (response.includes('אתגרים חברתיים:')) {\n    const challengesMatch = response.match(/אתגרים חברתיים:\\s*([^\\n]+)/i);\n    if (challengesMatch) {\n      userProfile.socialChallenges = challengesMatch[1].split(',').map(i => i.trim());\n    }\n  }\n  \n  if (response.includes('סוג קבוצה מועדף:')) {\n    const groupPrefMatch = response.match(/סוג קבוצה מועדף:\\s*([^\\n]+)/i);\n    if (groupPrefMatch) {\n      userProfile.preferredGroupType = groupPrefMatch[1].trim();\n    }\n  }\n}\n\n// הוספת המידע המעודכן לפלט\nreturn [\n  {\n    json: {\n      ...items[0].json,\n      therapistResponse: response,\n      session_stage: sessionStage,\n      userProfile: userProfile\n    }\n  }\n];"
+    },
+    "name": "עיבוד תשובת המטפל",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+      900,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "conditions": {
+        "string": [
+          {
+            "value1": "={{ $json.session_stage }}",
+            "value2": "completed",
+            "operation": "equal"
+          }
+        ]
+      }
+    },
+    "name": "האם האפיון הושלם?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 1,
+    "position": [
+      1120,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "upsert",
+      "documentId": "={{ $json.userId }}",
+      "fields": {
+        "values": [
+          {
+            "name": "userId",
+            "value": "={{ $json.userId }}"
+          },
+          {
+            "name": "name",
+            "value": "={{ $json.userName }}"
+          },
+          {
+            "name": "phone",
+            "value": "={{ $json.userPhone }}"
+          },
+          {
+            "name": "introExtroScore",
+            "value": "={{ $json.userProfile.introExtroScore }}"
+          },
+          {
+            "name": "interests",
+            "value": "={{ $json.userProfile.interests }}"
+          },
+          {
+            "name": "socialChallenges",
+            "value": "={{ $json.userProfile.socialChallenges }}"
+          },
+          {
+            "name": "preferredGroupType",
+            "value": "={{ $json.userProfile.preferredGroupType }}"
+          },
+          {
+            "name": "assignedGroup",
+            "value": ""
+          }
+        ]
+      }
+    },
+    "name": "שמירת פרופיל המשתמש",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      1340,
+      180
+    ]
+  },
+  {
+    "parameters": {
+      "httpMethod": "POST",
+      "options": {},
+      "url": "https://api.openai.com/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "ChatGPT API",
+      "sendBody": true,
+      "bodyParameters": {
+        "parameters": [
+          {
+            "name": "model",
+            "value": "gpt-4"
+          },
+          {
+            "name": "messages",
+            "value": "={{ [\n  {\n    \"role\": \"system\",\n    \"content\": \"אתה המנהל של מרכז טיפולי וירטואלי. תפקידך להתאים משתמשים לקבוצות מתאימות. אתה מקבל את מאפייני המשתמש ואת רשימת הקבוצות הקיימות. עליך לבחור את הקבוצה המתאימה ביותר או להחליט ליצור קבוצה חדשה.\"\n  },\n  {\n    \"role\": \"user\",\n    \"content\": \"אנא התאם את המשתמש הבא לקבוצה מתאימה:\\n\\nשם: \" + $json.userName + \"\\nציון אינטרוברטי/אקסטרוברטי: \" + $json.userProfile.introExtroScore + \"\\nתחומי עניין: \" + $json.userProfile.interests.join(\", \") + \"\\nאתגרים חברתיים: \" + $json.userProfile.socialChallenges.join(\", \") + \"\\nסוג קבוצה מועדף: \" + $json.userProfile.preferredGroupType + \"\\n\\nהקבוצות הקיימות הן:\\n\" + $node[\"Get Existing Groups\"].json.groupsDescription\n  }\n]"
+          },
+          {
+            "name": "temperature",
+            "value": 0.5
+          }
+        ]
+      }
+    },
+    "name": "התאמת משתמש לקבוצה",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 1,
+    "position": [
+      1560,
+      180
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "find",
+      "collection": "groups",
+      "options": {}
+    },
+    "name": "Get Existing Groups",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      1340,
+      380
+    ]
+  },
+  {
+    "parameters": {
+      "functionCode": "// עיבוד הקבוצות הקיימות לפורמט תיאורי\nconst groups = items[0].json.documents || [];\n\nlet groupsDescription = '';\nif (groups.length === 0) {\n  groupsDescription = 'אין קבוצות קיימות. יש ליצור קבוצה חדשה.';\n} else {\n  groups.forEach((group, index) => {\n    groupsDescription += `קבוצה ${index + 1}: ${group.name}\\n`;\n    groupsDescription += `תיאור: ${group.description}\\n`;\n    groupsDescription += `תחומי עניין: ${group.interests.join(', ')}\\n`;\n    groupsDescription += `מספר משתתפים: ${group.members.length}/${group.maxSize}\\n`;\n    groupsDescription += `אופי הקבוצה: ${group.groupType}\\n\\n`;\n  });\n}\n\nreturn [{\n  json: {\n    groups: groups,\n    groupsDescription: groupsDescription\n  }\n}];"
+    },
+    "name": "עיבוד קבוצות קיימות",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+      1340,
+      480
+    ]
+  },
+  {
+    "parameters": {
+      "functionCode": "// ניתוח התשובה של המנהל והחלטה אם ליצור קבוצה חדשה או להוסיף לקיימת\nconst managerResponse = JSON.parse(items[0].json).choices[0].message.content;\nconst groups = items[0].json.groups || [];\n\nlet assignedGroupId = null;\nlet newGroup = null;\n\n// בדיקה אם צריך ליצור קבוצה חדשה\nif (managerResponse.includes('ליצור קבוצה חדשה') || groups.length === 0) {\n  // הפקת מאפייני הקבוצה החדשה מתשובת המנהל\n  let groupName = \"קבוצה חדשה\";\n  let groupDescription = \"קבוצת תמיכה\";\n  let groupInterests = items[0].json.userProfile.interests;\n  let groupType = items[0].json.userProfile.preferredGroupType;\n  \n  // ניסיון לחלץ שם מתאים יותר לקבוצה\n  const nameMatch = managerResponse.match(/שם הקבוצה[:\\s]*([^\\n]+)/i);\n  if (nameMatch) {\n    groupName = nameMatch[1].trim();\n  }\n  \n  // ניסיון לחלץ תיאור\n  const descMatch = managerResponse.match(/תיאור[:\\s]*([^\\n]+)/i);\n  if (descMatch) {\n    groupDescription = descMatch[1].trim();\n  }\n  \n  newGroup = {\n    name: groupName,\n    description: groupDescription,\n    interests: groupInterests,\n    groupType: groupType,\n    members: [items[0].json.userId],\n    maxSize: 9,  // ברירת מחדל למקסימום גודל הקבוצה\n    whatsappGroupId: \"\",  // יושלם בהמשך\n    events: []\n  };\n} \n// אחרת, מוצאים לאיזו קבוצה קיימת להוסיף את המשתמש\nelse {\n  // ניסיון לחלץ את מספר הקבוצה\n  let groupIndex = null;\n  const groupMatch = managerResponse.match(/קבוצה *(\\d+)/i);\n  if (groupMatch) {\n    groupIndex = parseInt(groupMatch[1]) - 1;  // -1 כי האינדקס מתחיל מ-0\n  }\n  \n  if (groupIndex !== null && groupIndex >= 0 && groupIndex < groups.length) {\n    assignedGroupId = groups[groupIndex]._id;\n  } else {\n    // אם לא מצאנו קבוצה מפורשת, נבחר את הקבוצה הראשונה\n    if (groups.length > 0) {\n      assignedGroupId = groups[0]._id;\n    }\n  }\n}\n\nreturn [{\n  json: {\n    ...items[0].json,\n    managerDecision: managerResponse,\n    assignedGroupId: assignedGroupId,\n    newGroup: newGroup\n  }\n}];"
+    },
+    "name": "עיבוד החלטת המנהל",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+      1780,
+      180
+    ]
+  },
+  {
+    "parameters": {
+      "conditions": {
+        "boolean": [
+          {
+            "value1": "={{ $json.newGroup !== null }}",
+            "value2": true,
+            "operation": "equal"
+          }
+        ]
+      }
+    },
+    "name": "האם ליצור קבוצה חדשה?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 1,
+    "position": [
+      2000,
+      180
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "create",
+      "collection": "groups",
+      "fields": {
+        "values": [
+          {
+            "name": "name",
+            "value": "={{ $json.newGroup.name }}"
+          },
+          {
+            "name": "description",
+            "value": "={{ $json.newGroup.description }}"
+          },
+          {
+            "name": "interests",
+            "value": "={{ $json.newGroup.interests }}"
+          },
+          {
+            "name": "groupType",
+            "value": "={{ $json.newGroup.groupType }}"
+          },
+          {
+            "name": "members",
+            "value": "={{ $json.newGroup.members }}"
+          },
+          {
+            "name": "maxSize",
+            "value": "={{ $json.newGroup.maxSize }}"
+          },
+          {
+            "name": "whatsappGroupId",
+            "value": ""
+          },
+          {
+            "name": "events",
+            "value": "={{ $json.newGroup.events }}"
+          }
+        ]
+      }
+    },
+    "name": "יצירת קבוצה חדשה",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2240,
+      60
+    ]
+  },
+  {
+    "parameters": {
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "Twilio API",
+      "resource": "messagingService",
+      "operation": "create",
+      "friendlyName": "={{ $json.newGroup.name }}",
+      "inboundRequestUrl": "={{ $workflow.staticWebhookUrl }}?service=group"
+    },
+    "name": "Twilio - יצירת שירות הודעות לקבוצה",
+    "type": "n8n-nodes-base.twilio",
+    "typeVersion": 1,
+    "position": [
+      2460,
+      60
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "update",
+      "collection": "groups",
+      "document": "={{ $json.workflowData.lastNodeOutput.insertedId }}",
+      "updateKey": "whatsappGroupId",
+      "updateValue": "={{ $json.sid }}"
+    },
+    "name": "עדכון מזהה שירות הודעות",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2680,
+      60
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "update",
+      "collection": "users",
+      "document": "={{ $json.userId }}",
+      "updateKey": "assignedGroup",
+      "updateValue": "={{ $json.workflowData.lastNodeOutput.insertedId }}"
+    },
+    "name": "עדכון קבוצה למשתמש (חדשה)",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2900,
+      60
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "update",
+      "document": "={{ $json.assignedGroupId }}",
+      "collection": "groups",
+      "fields": {
+        "values": [
+          {
+            "name": "members",
+            "value": "={{ $node[\"Get Group Details\"].json.members.concat($json.userId) }}"
+          }
+        ]
+      }
+    },
+    "name": "הוספת משתמש לקבוצה קיימת",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2460,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "update",
+      "collection": "users",
+      "document": "={{ $json.userId }}",
+      "updateKey": "assignedGroup",
+      "updateValue": "={{ $json.assignedGroupId }}"
+    },
+    "name": "עדכון קבוצה למשתמש (קיימת)",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2680,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "Twilio API",
+      "resource": "participant",
+      "operation": "add",
+      "messagingServiceSid": "={{ $node[\"Get Group Details\"].json.whatsappGroupId }}",
+      "userIdentity": "whatsapp:{{ $json.userPhone }}"
+    },
+    "name": "Twilio - הוספת משתמש לקבוצה",
+    "type": "n8n-nodes-base.twilio",
+    "typeVersion": 1,
+    "position": [
+      2900,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "findById",
+      "collection": "groups",
+      "document": "={{ $json.assignedGroupId }}"
+    },
+    "name": "Get Group Details",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      2240,
+      300
+    ]
+  },
+  {
+    "parameters": {
+      "triggerTimes": {
+        "item": [
+          {
+            "mode": "everyX",
+            "value": 1,
+            "unit": "hours"
+          }
+        ]
+      }
+    },
+    "name": "Scheduler - סריקת אירועים",
+    "type": "n8n-nodes-base.scheduleTrigger",
+    "typeVersion": 1,
+    "position": [
+      240,
+      740
+    ]
+  },
+  {
+    "parameters": {
+      "url": "https://api.eventbrite.com/v3/events/search",
+      "options": {
+        "qs": {
+          "location.address": "Tel Aviv, Israel",
+          "categories": "107,101,103,105,108",
+          "start_date.range_start": "={{ $today }}",
+          "sort_by": "date"
+        }
+      },
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "Eventbrite API"
+    },
+    "name": "חיפוש אירועים ב-Eventbrite",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 1,
+    "position": [
+      460,
+      740
+    ]
+  },
+  {
+    "parameters": {
+      "url": "https://api.meetup.com/find/upcoming_events",
+      "options": {
+        "qs": {
+          "lat": "32.0853",
+          "lon": "34.7818",
+          "radius": "25",
+          "text": "therapy mental-health support-group social"
+        }
+      },
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "Meetup API"
+    },
+    "name": "חיפוש אירועים ב-Meetup",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 1,
+    "position": [
+      460,
+      900
+    ]
+  },
+  {
+    "parameters": {
+      "functionCode": "// עיבוד נתוני האירועים מכל המקורות\nconst eventbriteEvents = items[0].json.events || [];\nconst meetupEvents = items[1].json.events || [];\n\n// המרת אירועי Eventbrite לפורמט אחיד\nconst processedEventbriteEvents = eventbriteEvents.map(event => ({\n  source: 'Eventbrite',\n  id: event.id,\n  name: event.name.text,\n  description: event.description.text,\n  startDate: event.start.local,\n  endDate: event.end.local,\n  url: event.url,\n  location: event.venue ? event.venue.address.localized_address_display : 'Online',\n  categories: event.categories ? event.categories.map(c => c.name).join(', ') : '',\n  isOnline: event.online_event,\n  price: event.is_free ? 'Free' : 'Paid',\n  imageUrl: event.logo ? event.logo.url : ''\n}));\n\n// המרת אירועי Meetup לפורמט אחיד\nconst processedMeetupEvents = meetupEvents.map(event => ({\n  source: 'Meetup',\n  id: event.id,\n  name: event.name,\n  description: event.description,\n  startDate: event.local_date + 'T' + event.local_time,\n  endDate: '',  // Meetup לא תמיד מספק זמן סיום\n  url: event.link,\n  location: event.venue ? `${event.venue.name}, ${event.venue.address_1}, ${event.venue.city}` : 'Online',\n  categories: event.group.name,\n  isOnline: !event.venue,\n  price: 'N/A',  // Meetup לא תמיד מספק מידע על מחיר\n  imageUrl: event.featured_photo ? event.featured_photo.photo_link : ''\n}));\n\n// איחוד כל האירועים\nconst allEvents = [...processedEventbriteEvents, ...processedMeetupEvents];\n\nreturn [{\n  json: {\n    events: allEvents\n  }\n}];"
+    },
+    "name": "עיבוד נתוני אירועים",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+      680,
+      820
+    ]
+  },
+  {
+    "parameters": {
+      "operation": "find",
+      "collection": "groups"
+    },
+    "name": "קבלת כל הקבוצות",
+    "type": "n8n-nodes-base.mongoDb",
+    "typeVersion": 1,
+    "position": [
+      900,
+      820
+    ]
+  },
+  {
+    "parameters": {
+      "functionCode": "// עבור כל קבוצה, נמצא את האירועים המתאימים ביותר\nconst groups = items[0].json.documents || [];\nconst events = items[0].json.events || [];\n\n// ניצור רשימת משימות להתאמת אירועים לקבוצות\nconst matchingTasks = [];\n\ngroups.forEach(group => {\n  matchingTasks.push({\n    group: group,\n    events: events\n  });\n});\n\nreturn matchingTasks.map(task => ({\n  json: task\n}));"
+    },
+    "name": "יצירת משימות התאמה",
+    "type": "n8n-nodes-base.function",
+    "typeVersion": 1,
+    "position": [
+      1120,
+      820
+    ]
+  },
+  {
+    "parameters": {
+      "httpMethod": "POST",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialName": "ChatGPT API",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": "{\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"אתה אחראי על התאמת אירועים לקבוצות תמיכה. תפקידך הוא לבחור מתוך רשימת אירועים את ה-3 האירועים המתאימים ביותר לקבוצה מסוימת, בהתבסס על מאפייני הקבוצה ותחומי העניין שלה.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"להלן מאפייני הקבוצה:\\n\\nשם: {{ $json.group.name }}\\nתיאור: {{ $json.group.description }}\\nתחומי עניין: {{ $json.group.interests.join(\", \") }}\\nאופי הקבוצה: {{ $json.group.groupType }}\\n\\nלהלן רשימת האירועים הזמינים:\\n{% for event in $json.events %}\\nאירוע {{ loop.index }}: {{ event.name }}\\nתיאור: {{ event.description }}\\nתאריך: {{ event.startDate }}\\nמקום: {{ event.location }}\\nקטגוריות: {{ event.categories }}\\n\\n{% endfor %}\\n\\nבחר את 3 האירועים המתאימים ביותר לקבוצה הזו ונמק את בחירתך.\"\n    }\n  ],\n  \"temperature\": 0.5\n}",
+      "options": {}
+      },
+      "name": "התאמת אירועים לקבוצה",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        820
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "functionCode": "// חילוץ האירועים המומלצים והוספתם לקבוצה\nconst response = JSON.parse(items[0].json).choices[0].message.content;\nconst group = items[0].json.group;\nconst allEvents = items[0].json.events;\n\n// חילוץ מספרי האירועים שנבחרו\nconst selectedEventNumbers = [];\nconst regex = /אירוע \\d+: *(\\d+)/g;\nlet match;\n\nwhile ((match = regex.exec(response)) !== null) {\n  const eventNumber = parseInt(match[1]);\n  if (!isNaN(eventNumber) && eventNumber > 0 && eventNumber <= allEvents.length) {\n    selectedEventNumbers.push(eventNumber - 1);  // -1 כי האינדקסים מתחילים מ-0\n  }\n}\n\n// לקיחת האירועים המתאימים\nconst selectedEvents = selectedEventNumbers.map(index => allEvents[index]);\n\nreturn [{\n  json: {\n    group: group,\n    recommendedEvents: selectedEvents,\n    explanation: response\n  }\n}];"
+      },
+      "name": "עיבוד המלצות אירועים",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "collection": "groups",
+        "document": "={{ $json.group._id }}",
+        "updateKey": "recommendedEvents",
+        "updateValue": "={{ $json.recommendedEvents }}"
+      },
+      "name": "עדכון אירועים מומלצים בקבוצה",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "Twilio API",
+        "resource": "message",
+        "operation": "send",
+        "from": "whatsapp:+14155238886",
+        "to": "whatsapp:+{{ $json.group.recipientsList }}",
+        "content": "=מצאנו אירועים חדשים שעשויים לעניין את הקבוצה!\n\n{% for event in $json.recommendedEvents %}\n📅 {{ event.name }}\nתאריך: {{ event.startDate }}\nמיקום: {{ event.location }}\nקישור: {{ event.url }}\n\n{% endfor %}\n\nמה דעתכם? מי מעוניין להצטרף?"
+      },
+      "name": "Twilio - שליחת אירועים לקבוצה",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "incomingMethod": "POST",
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "name": "Webhook - הודעות נכנסות מ-Twilio",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.Body }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "בדיקת סוג ההודעה",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        460,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// חילוץ נתוני ההודעה מ-Twilio\nconst messageData = {\n  text: items[0].json.Body,\n  from: items[0].json.From.replace('whatsapp:', ''),  // מסיר את הפרפיקס של whatsapp:\n  timestamp: Date.now(),\n  chatId: items[0].json.To || ''\n};\n\n// בדיקה אם זו הודעה קבוצתית על פי פורמט או metadata\nconst isGroupMessage = messageData.chatId.includes('group') || items[0].json.GroupSid;\n\nif (isGroupMessage) {\n  return [{\n    json: {\n      ...messageData,\n      isGroupMessage: true\n    }\n  }];\n} \n// אחרת זו הודעה אישית למטפל\nelse {\n  return [{\n    json: {\n      ...messageData,\n      isGroupMessage: false,\n      userPhone: messageData.from\n    }\n  }];\n}"
+      },
+      "name": "חילוץ נתוני ההודעה",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        680,
+        1180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isGroupMessage }}",
+              "value2": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "name": "האם הודעה קבוצתית?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        1180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "findOne",
+        "collection": "groups",
+        "options": {
+          "sort": {},
+          "limit": 1,
+          "skip": 0,
+          "projection": {},
+          "filter": {
+            "whatsappGroupId": "={{ $json.chatId }}"
+          }
+        }
+      },
+      "name": "מציאת פרטי הקבוצה",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "ChatGPT API",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"אתה פסיכולוג קבוצתי שמנהל קבוצת תמיכה. תפקידך לקדם שיח חיובי, לעודד משתתפים לשתף, ולמנוע דיבור פוגעני. עליך לזהות אם יש תוכן פוגעני בהודעה ולהגיב בהתאם, וגם לעודד המשך השיחה בנושאים הקשורים למטרות הקבוצה.\\n\\nמידע על הקבוצה:\\nשם: {{ $json.document.name }}\\nתיאור: {{ $json.document.description }}\\nתחומי עניין: {{ $json.document.interests.join(', ') }}\\n\\nאם תזהה תוכן אלים או פוגעני, בנוסף לתגובה המתאימה בקבוצה, עליך גם לדווח על כך.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"הודעה חדשה בקבוצה:\\n{{ $json.text }}\"\n    }\n  ],\n  \"temperature\": 0.7\n}",
+        "options": {}
+      },
+      "name": "ניתוח הודעה קבוצתית",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// ניתוח תגובת המנהל הקבוצתי\nconst response = JSON.parse(items[0].json).choices[0].message.content;\nlet shouldRespond = true;\nlet responseMessage = response;\nlet isHarmfulContent = false;\n\n// בדיקה אם התוכן מכיל אלימות או פגיעה\nif (response.toLowerCase().includes('תוכן פוגעני') || \n    response.toLowerCase().includes('אלימות') ||\n    response.toLowerCase().includes('לא מתאים') ||\n    response.toLowerCase().includes('לדווח')) {\n  isHarmfulContent = true;\n}\n\n// לפעמים אין צורך בתגובה\nif (response.toLowerCase().includes('אין צורך בתגובה') || \n    response.toLowerCase().includes('לא להגיב')) {\n  shouldRespond = false;\n}\n\n// החזרת התוצאות\nreturn [{\n  json: {\n    ...items[0].json,\n    groupManagerResponse: response,\n    shouldRespond: shouldRespond,\n    responseMessage: responseMessage,\n    isHarmfulContent: isHarmfulContent\n  }\n}];"
+      },
+      "name": "עיבוד תגובת המנהל הקבוצתי",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldRespond }}",
+              "value2": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "name": "האם להגיב?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "Twilio API",
+        "resource": "message",
+        "operation": "send",
+        "from": "whatsapp:+14155238886",
+        "to": "whatsapp:={{ $json.userPhone }}",
+        "content": "={{ $json.responseMessage }}"
+      },
+      "name": "Twilio - תגובה לקבוצה",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        940
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isHarmfulContent }}",
+              "value2": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "name": "האם יש תוכן פוגעני?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        1180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "findOne",
+        "collection": "users",
+        "options": {
+          "filter": {
+            "phone": "={{ $json.from }}"
+          }
+        }
+      },
+      "name": "מציאת פרטי המשתמש הפוגעני",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "findById",
+        "collection": "users",
+        "document": "={{ $json.document.personalTherapistId }}"
+      },
+      "name": "מציאת המטפל האישי",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        2460,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "Twilio API",
+        "resource": "message",
+        "operation": "send",
+        "from": "whatsapp:+14155238886",
+        "to": "whatsapp:={{ $json.document.phone }}",
+        "content": "=התראה: המשתמש {{ $node[\"מציאת פרטי המשתמש הפוגעני\"].json.document.name }} שלח הודעה שזוהתה כפוגענית בקבוצה {{ $node[\"מציאת פרטי הקבוצה\"].json.document.name }}.\n\nההודעה: \"{{ $json.text }}\"\n\nתגובת המנהל הקבוצתי: \"{{ $json.groupManagerResponse }}\"\n\nנא לתת לכך תשומת לב טיפולית."
+      },
+      "name": "Twilio - דיווח למטפל האישי",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        2680,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "findOne",
+        "collection": "users",
+        "options": {
+          "filter": {
+            "phone": "={{ $json.userPhone }}"
+          }
+        }
+      },
+      "name": "מציאת משתמש",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "ChatGPT API",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"אתה מטפל אישי במרכז טיפולי וירטואלי. אתה מנהל שיחה עם מטופל קיים. תפקידך לספק תמיכה, להקשיב, ולעזור למטופל בהתמודדות עם אתגרים. זכור את המידע על המטופל כדי לתת מענה רלוונטי.\\n\\nמידע על המטופל:\\nשם: {{ $json.document.name || 'לא ידוע' }}\\nתחומי עניין: {{ $json.document.interests ? $json.document.interests.join(', ') : 'לא ידוע' }}\\nאתגרים חברתיים: {{ $json.document.socialChallenges ? $json.document.socialChallenges.join(', ') : 'לא ידוע' }}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.text }}\"\n    }\n  ],\n  \"temperature\": 0.7\n}",
+        "options": {}
+      },
+      "name": "תגובת המטפל האישי",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialName": "Twilio API",
+        "resource": "message",
+        "operation": "send",
+        "from": "whatsapp:+14155238886",
+        "to": "whatsapp:={{ $json.userPhone }}",
+        "content": "={{ JSON.parse($json.data).choices[0].message.content }}"
+      },
+      "name": "Twilio - שליחת תגובת המטפל",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "webhook",
+        "options": {}
+      },
+      "name": "Webhook - הוספת אירועים ידנית",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        240,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// עיבוד האירוע שהוזן ידנית\nconst eventData = items[0].json.body || {};\n\n// המרה לפורמט האחיד\nconst processedEvent = {\n  source: 'Manual Entry',\n  id: `manual-${Date.now()}`,\n  name: eventData.name || 'אירוע ללא שם',\n  description: eventData.description || '',\n  startDate: eventData.startDate || new Date().toISOString(),\n  endDate: eventData.endDate || '',\n  url: eventData.url || '',\n  location: eventData.location || 'לא צוין',\n  categories: eventData.categories || '',\n  isOnline: eventData.isOnline || false,\n  price: eventData.price || 'לא צוין',\n  imageUrl: eventData.imageUrl || ''\n};\n\nreturn [{\n  json: {\n    event: processedEvent\n  }\n}];"
+      },
+      "name": "עיבוד אירוע ידני",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "collection": "events",
+        "fields": {
+          "values": [
+            {
+              "name": "source",
+              "value": "={{ $json.event.source }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.event.name }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ $json.event.description }}"
+            },
+            {
+              "name": "startDate",
+              "value": "={{ $json.event.startDate }}"
+            },
+            {
+              "name": "endDate",
+              "value": "={{ $json.event.endDate }}"
+            },
+            {
+              "name": "url",
+              "value": "={{ $json.event.url }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.event.location }}"
+            },
+            {
+              "name": "categories",
+              "value": "={{ $json.event.categories }}"
+            },
+            {
+              "name": "isOnline",
+              "value": "={{ $json.event.isOnline }}"
+            },
+            {
+              "name": "price",
+              "value": "={{ $json.event.price }}"
+            },
+            {
+              "name": "imageUrl",
+              "value": "={{ $json.event.imageUrl }}"
+            }
+          ]
+        }
+      },
+      "name": "הוספת אירוע למסד הנתונים",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        680,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"האירוע נוסף בהצלחה\",\n  \"eventId\": \"{{ $node[\"הוספת אירוע למסד הנתונים\"].json.insertedId }}\"\n}",
+        "options": {}
+      },
+      "name": "תגובה להוספת אירוע",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        1520
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp - קבלת פניות חדשות": {
+      "main": [
+        [
+          {
+            "node": "ChatGPT - מטפל אישי",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT - מטפל אישי": {
+      "main": [
+        [
+          {
+            "node": "בדיקת שלב שיחה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "בדיקת שלב שיחה": {
+      "main": [
+        [
+          {
+            "node": "עיבוד תשובת המטפל",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עיבוד תשובת המטפל": {
+      "main": [
+        [
+          {
+            "node": "האם האפיון הושלם?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "האם האפיון הושלם?": {
+      "main": [
+        [
+          {
+            "node": "שמירת פרופיל המשתמש",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp - קבלת פניות חדשות",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "שמירת פרופיל המשתמש": {
+      "main": [
+        [
+          {
+            "node": "התאמת משתמש לקבוצה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Groups": {
+      "main": [
+        [
+          {
+            "node": "עיבוד קבוצות קיימות",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "התאמת משתמש לקבוצה": {
+      "main": [
+        [
+          {
+            "node": "עיבוד החלטת המנהל",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עיבוד החלטת המנהל": {
+      "main": [
+        [
+          {
+            "node": "האם ליצור קבוצה חדשה?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "האם ליצור קבוצה חדשה?": {
+      "main": [
+        [
+          {
+            "node": "יצירת קבוצה חדשה",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Group Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "יצירת קבוצה חדשה": {
+      "main": [
+        [
+          {
+            "node": "יצירת קבוצת WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "יצירת קבוצת WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "עדכון מזהה קבוצת WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עדכון מזהה קבוצת WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "עדכון קבוצה למשתמש (חדשה)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Group Details": {
+      "main": [
+        [
+          {
+            "node": "הוספת משתמש לקבוצה קיימת",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "הוספת משתמש לקבוצה קיימת": {
+      "main": [
+        [
+          {
+            "node": "עדכון קבוצה למשתמש (קיימת)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עדכון קבוצה למשתמש (קיימת)": {
+      "main": [
+        [
+          {
+            "node": "הוספת משתמש לקבוצת WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduler - סריקת אירועים": {
+      "main": [
+        [
+          {
+            "node": "חיפוש אירועים ב-Eventbrite",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "חיפוש אירועים ב-Meetup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "חיפוש אירועים ב-Eventbrite": {
+      "main": [
+        [
+          {
+            "node": "עיבוד נתוני אירועים",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "חיפוש אירועים ב-Meetup": {
+      "main": [
+        [
+          {
+            "node": "עיבוד נתוני אירועים",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "עיבוד נתוני אירועים": {
+      "main": [
+        [
+          {
+            "node": "קבלת כל הקבוצות",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "קבלת כל הקבוצות": {
+      "main": [
+        [
+          {
+            "node": "יצירת משימות התאמה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "יצירת משימות התאמה": {
+      "main": [
+        [
+          {
+            "node": "התאמת אירועים לקבוצה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "התאמת אירועים לקבוצה": {
+      "main": [
+        [
+          {
+            "node": "עיבוד המלצות אירועים",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עיבוד המלצות אירועים": {
+      "main": [
+        [
+          {
+            "node": "עדכון אירועים מומלצים בקבוצה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עדכון אירועים מומלצים בקבוצה": {
+      "main": [
+        [
+          {
+            "node": "שליחת אירועים לקבוצת WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - הודעות נכנסות מ-Twilio": {
+      "main": [
+        [
+          {
+            "node": "בדיקת סוג ההודעה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "בדיקת סוג ההודעה": {
+      "main": [
+        [
+          {
+            "node": "חילוץ נתוני ההודעה",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "חילוץ נתוני ההודעה": {
+      "main": [
+        [
+          {
+            "node": "האם הודעה קבוצתית?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "האם הודעה קבוצתית?": {
+      "main": [
+        [
+          {
+            "node": "מציאת פרטי הקבוצה",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "מציאת משתמש",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "מציאת פרטי הקבוצה": {
+      "main": [
+        [
+          {
+            "node": "ניתוח הודעה קבוצתית",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ניתוח הודעה קבוצתית": {
+      "main": [
+        [
+          {
+            "node": "עיבוד תגובת המנהל הקבוצתי",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עיבוד תגובת המנהל הקבוצתי": {
+      "main": [
+        [
+          {
+            "node": "האם להגיב?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "האם להגיב?": {
+      "main": [
+        [
+          {
+            "node": "תגובה לקבוצה",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "האם יש תוכן פוגעני?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "האם יש תוכן פוגעני?": {
+      "main": [
+        [
+          {
+            "node": "מציאת פרטי המשתמש הפוגעני",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "מציאת פרטי המשתמש הפוגעני": {
+      "main": [
+        [
+          {
+            "node": "מציאת המטפל האישי",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "מציאת המטפל האישי": {
+      "main": [
+        [
+          {
+            "node": "דיווח למטפל האישי",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "מציאת משתמש": {
+      "main": [
+        [
+          {
+            "node": "תגובת המטפל האישי",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "תגובת המטפל האישי": {
+      "main": [
+        [
+          {
+            "node": "שליחת תגובת המטפל",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - הוספת אירועים ידנית": {
+      "main": [
+        [
+          {
+            "node": "עיבוד אירוע ידני",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "עיבוד אירוע ידני": {
+      "main": [
+        [
+          {
+            "node": "הוספת אירוע למסד הנתונים",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "הוספת אירוע למסד הנתונים": {
+      "main": [
+        [
+          {
+            "node": "תגובה להוספת אירוע",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+    

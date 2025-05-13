@@ -140,20 +140,20 @@ const UserCard = ({
           <Button 
             size="small" 
             startIcon={<PhoneIcon />} 
-            onClick={() => onContact?.(user)}
+            onClick={() => { if (onContact) onContact(user); }}
           >
             יצירת קשר
           </Button>
           <Button 
             size="small" 
             startIcon={<MessageIcon />} 
-            onClick={() => onMessage?.(user)}
+            onClick={() => { if (onMessage) onMessage(user); }}
           >
             הודעה
           </Button>
           <Button 
             size="small" 
-            onClick={() => onViewDetails?.(user)}
+            onClick={() => { if (onViewDetails) onViewDetails(user); }}
           >
             פרטים
           </Button>
@@ -163,4 +163,4 @@ const UserCard = ({
   );
 };
 
-export default userCard;
+export default UserCard;  

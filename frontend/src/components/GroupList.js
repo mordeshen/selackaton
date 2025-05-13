@@ -90,10 +90,14 @@ const GroupList = ({
 
     switch (action) {
       case 'message':
-        onGroupMessage?.(selectedGroup);
+        if (onGroupMessage) {
+          onGroupMessage(selectedGroup);
+        }
         break;
       case 'manage':
-        onGroupManage?.(selectedGroup);
+        if (onGroupManage) {
+          onGroupManage(selectedGroup);
+        }
         break;
       default:
         break;
@@ -176,7 +180,7 @@ const GroupList = ({
                   <ListItem
                     button
                     selected={isSelected}
-                    onClick={() => onGroupSelect?.(group)}
+                    onClick={() => { if (onGroupSelect) onGroupSelect(group); }}
                     sx={{
                       bgcolor: isSelected ? 'action.selected' : 'inherit',
                       '&:hover': {
